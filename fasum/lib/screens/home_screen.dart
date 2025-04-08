@@ -1,24 +1,40 @@
 import 'package:flutter/material.dart';
-
-class HomeScreen extends StatefulWidget {
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fasum/screens/sign_in_screen.dart';
+import 'package:fasum/screens/add_post_screen.dart';
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+  Future<void> signOut(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const SignInScreen()));
+  }
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Home'),
+        title: const Text('Home'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            onPressed: () {
+              signOut(context);
+            },
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
-      body: Center(
-        child: Text(
-          'Welcome to the Home Screen!',
-          style: TextStyle(fontSize: 24),
-        ),
+      body: const Center(
+        child: Text('Currently no posts'),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => AddPostScreen()),
+          );
+        },
+        child: const Icon(Icons.add),
       ),
     );
   }
