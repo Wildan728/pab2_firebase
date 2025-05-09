@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:http/http.dart' as http;
 
 class AddPostScreen extends StatefulWidget {
   @override
@@ -76,58 +77,75 @@ class _AddPostScreenState extends State<AddPostScreen> {
     if (_image == null) return;
     setState(() => _isGenerating = true);
     try {
-      final model = GenerativeModel(
-        apiKey: 'AIzaSyCTPQb7LCGel-xOaccl9caaAjI26eOcSVY',
-        model: 'gemini-1.5-pro',
-      );
-
       final imageBytes = await _image!.readAsBytes();
-      final content = Content.multi([
-        DataPart('image/jpeg', imageBytes),
-        TextPart(
-          'Berdasarkan foto ini, identifikasi satu kategori utama kerusakan fasilitas umum'
-              'dari daftar berikut: Jalan Rusak, Marka Pudar, Lampu mati, Trotoar rusak, '
-              'Rambu rusak, Jembatan Rusak, Saluran air tersumbat, Sampah menumpuk, Sungai Tercemar '
-              'Vandalisme, Banjir, dan lainnya.'
-              'Pilih kategori yang paling dominan atau paling mendesak untuk dilaporkan'
-              'Buat deskripsi singkat untuk laporan perbaikan, dan tambahkan permohonan perbaikan.'
-              'Fokus pada kerusakan yang terlihat dan hindari spekulasi.\n\n'
-              'Format output yang diinginkan:\n'
-              'Kategori: [satu kategori yang dipilih]\n'
-              'Deskripsi: [deskripsi singkat]',
-        ),
-      ]);
-
-      final response = await model.generateContent([content]);
-      final aiText = response.text;
-      print('AI TEXT: $aiText');
-
-      if (aiText != null && aiText.isNotEmpty) {
-        final lines = aiText.split('\n');
-        String? category;
-        String? description;
-
-        for (var line in lines) {
-          final lower = line.toLowerCase();
-          if (lower.startsWith('kategori:')) {
-            category = line.substring(9).trim();
-          } else if (lower.startsWith('deskripsi:')) {
-            description = line.substring(10).trim();
-          } else if (lower.startsWith('Keterangan')) {
-            description = line.substring(11).trim();
+      final base64Image = base64Encode(imageBytes);
+      const apiKey = 'AIzaSyCTPQb7LCGel-xOaccl9caaAjI26eOcSVY'; // ganti dengan API key kamu
+      const url = 'https://generativelanguage.googleapis.com/v1/models/gemini2.0-flash:generateContent?key=$apiKey';
+      final body = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {
+              "inlineData": {
+                "mimeType": "image/jpeg",
+                "data": base64Image,
+              }
+            },
+            {
+              "text": "Berdasarkan foto ini, identifikasi satu kategori utama kerusakan fasilitas umum "
+      "dari daftar berikut: Jalan Rusak, Marka Pudar, Lampu Mati, Trotoar Rusak, "
+      "Rambu Rusak, Jembatan Rusak, Sampah Menumpuk, Saluran Tersumbat, Sungai Tercemar, "
+      "Sampah Sungai, Pohon Tumbang, Taman Rusak, Fasilitas Rusak, Pipa Bocor, "
+      "Vandalisme, Banjir, dan Lainnya. " "Pilih kategori yang paling dominan atau paling mendesak untuk dilaporkan. "
+      "Buat deskripsi singkat untuk laporan perbaikan, dan tambahkan permohonan perbaikan. "
+      "Fokus pada kerusakan yang terlihat dan hindari spekulasi.\n\n"
+      "Format output yang diinginkan:\n"
+      "Kategori: [satu kategori yang dipilih]\n"
+      "Deskripsi: [deskripsi singkat]"
+      }
+      ]
+      }
+      ]
+      });
+      final headers = {
+        'Content-Type': 'application/json',
+      };
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: body,
+      );
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        final text =
+        jsonResponse['candidates'][0]['content']['parts'][0]['text'];
+        print("AI TEXT: $text");
+        if (text != null && text.isNotEmpty) {
+          final lines = text.trim().split('\n');
+          String? category;
+          String? description;
+          for (var line in lines) {
+            final lower = line.toLowerCase();
+            if (lower.startsWith('kategori:')) {
+              category = line.substring(9).trim();
+            } else if (lower.startsWith('deskripsi:')) {
+              description = line.substring(10).trim();
+            } else if (lower.startsWith('keterangan:')) {
+              description = line.substring(11).trim();
+            }
           }
+          description ??= text.trim();
+          setState(() {
+            _aiCategory = category ?? 'Tidak diketahui';
+            _aiDescription = description!;
+            _descriptionController.text = _aiDescription!;
+          });
         }
-
-        description ??= aiText.trim();
-
-        setState(() {
-          _aiCategory = category ?? 'Tidak diketahui';
-          _aiDescription = description;
-          _descriptionController.text = _aiDescription!;
-        });
+      } else {
+        debugPrint('Request failed: ${response.body}');
       }
     } catch (e) {
-      debugPrint('Failed to generate description: $e');
+      debugPrint('Failed to generate AI description: $e');
     } finally {
       if (mounted) setState(() => _isGenerating = false);
     }
@@ -153,8 +171,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
       try {
         final position = await Geolocator.getCurrentPosition(
           // locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
-        )
-            .timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 10));
         setState(() {
           _latitude = position.latitude;
           _longtitude = position.longitude;
@@ -179,9 +196,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
     if (uid == null) {
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pengguna tidak ditemukan')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Pengguna tidak ditemukan')));
       return;
     }
 
@@ -190,7 +207,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
       //ambil nama lengkap dari koleksi user
       final userDoc =
-      await FirebaseFirestore.instance.collection('user').doc(uid).get();
+          await FirebaseFirestore.instance.collection('user').doc(uid).get();
       final fullName = userDoc.data()?['fullName'] ?? 'Tanpa Nama';
       await FirebaseFirestore.instance.collection('post').add({
         'image': _base64Image,
@@ -207,52 +224,51 @@ class _AddPostScreenState extends State<AddPostScreen> {
       debugPrint('Upload failed: $e');
       if (!mounted) return;
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal mengunggah postingan')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal mengunggah postingan')));
     }
   }
 
   void _showImageSourceDialog() {
     showModalBottomSheet(
-        context: context,
-        builder: (BuildContext context) {
-          return SafeArea(
-            child: Wrap(
-              children: <Widget>[
-                ListTile(
-                  leading: const Icon(Icons.camera_alt),
-                  title: const Text('Take a Picture'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.camera);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_library),
-                  title: const Text('Choose from gallery'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.gallery);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.cancel),
-                  title: const Text('Cancel'),
-                  onTap: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          );
-        });
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a Picture'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cancel),
+                title: const Text('Cancel'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Add Post'),
-      ),
+      appBar: AppBar(title: Text('Add Post')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -260,24 +276,20 @@ class _AddPostScreenState extends State<AddPostScreen> {
           children: [
             _image != null
                 ? Image.file(
-              _image!,
-              height: 200,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            )
+                  _image!,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
                 : GestureDetector(
-              onTap: _showImageSourceDialog,
-              child: Container(
-                height: 200,
-                color: Colors.grey[300],
-                child: Center(
-                  child: Icon(Icons.add_a_photo, size: 50),
+                  onTap: _showImageSourceDialog,
+                  child: Container(
+                    height: 200,
+                    color: Colors.grey[300],
+                    child: Center(child: Icon(Icons.add_a_photo, size: 50)),
+                  ),
                 ),
-              ),
-            ),
-            SizedBox(
-              height: 10,
-            ),
+            SizedBox(height: 10),
             TextField(
               controller: _descriptionController,
               textCapitalization: TextCapitalization.sentences,
@@ -287,10 +299,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            ElevatedButton(
-              onPressed: () {},
-              child: Text('Post'),
-            ),
+            ElevatedButton(onPressed: () {}, child: Text('Post')),
           ],
         ),
       ),
