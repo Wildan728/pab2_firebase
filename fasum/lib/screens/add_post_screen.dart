@@ -299,7 +299,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            ElevatedButton(onPressed: () {}, child: Text('Post')),
+            ElevatedButton(onPressed: _submitPost, child: Text('Post')),
           ],
         ),
       ),
