@@ -152,8 +152,10 @@ class SignUpScreenState extends State<SignUpScreen> {
     final password = _passwordController.text;
     setState(() => _isLoading = true);
     try {
-      final userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password
+      );
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userCredential.user!.uid)

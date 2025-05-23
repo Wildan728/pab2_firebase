@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -13,6 +12,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:http/http.dart' as http;
 
 class AddPostScreen extends StatefulWidget {
+  const AddPostScreen({super.key});
   @override
   State<AddPostScreen> createState() => _AddPostScreenState();
 }
@@ -29,9 +29,30 @@ class _AddPostScreenState extends State<AddPostScreen> {
   String? _aiDescription;
   bool _isGenerating = false;
 
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final pickedFile = await _picker.pickImage(source: source);
+      if (pickedFile != null) {
+        setState(() {
+          _image = File(pickedFile.path);
+          _aiCategory = null;
+          _aiDescription = null;
+          _descriptionController.clear();
+        });
+        await _compressAndEncodeImage();
+        await _generateDescriptionWithAI();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
+      }
+    }
+  }
+
   Future<void> _compressAndEncodeImage() async {
     if (_image == null) return;
-
     try {
       final compressedImage = await FlutterImageCompress.compressWithFile(
         _image!.path,
@@ -51,28 +72,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  Future<void>? _pickImage(ImageSource source) async {
-    try {
-      final PickedFile = await _picker.pickImage(source: source);
-      if (PickedFile != null) {
-        setState(() {
-          _image = File(PickedFile.path);
-          _aiCategory = null;
-          _aiDescription = null;
-          _descriptionController.clear();
-        });
-        await _compressAndEncodeImage();
-        await _generateDescriptionWithAI();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
-      }
-    }
-  }
-
   Future<void> _generateDescriptionWithAI() async {
     if (_image == null) return;
     setState(() => _isGenerating = true);
@@ -82,30 +81,31 @@ class _AddPostScreenState extends State<AddPostScreen> {
       const apiKey = 'AIzaSyCTPQb7LCGel-xOaccl9caaAjI26eOcSVY'; // ganti dengan API key kamu
       const url = 'https://generativelanguage.googleapis.com/v1/models/gemini2.0-flash:generateContent?key=$apiKey';
       final body = jsonEncode({
-      "contents": [
-        {
-          "parts": [
-            {
-              "inlineData": {
-                "mimeType": "image/jpeg",
-                "data": base64Image,
-              }
-            },
-            {
-              "text": "Berdasarkan foto ini, identifikasi satu kategori utama kerusakan fasilitas umum "
-      "dari daftar berikut: Jalan Rusak, Marka Pudar, Lampu Mati, Trotoar Rusak, "
-      "Rambu Rusak, Jembatan Rusak, Sampah Menumpuk, Saluran Tersumbat, Sungai Tercemar, "
-      "Sampah Sungai, Pohon Tumbang, Taman Rusak, Fasilitas Rusak, Pipa Bocor, "
-      "Vandalisme, Banjir, dan Lainnya. " "Pilih kategori yang paling dominan atau paling mendesak untuk dilaporkan. "
-      "Buat deskripsi singkat untuk laporan perbaikan, dan tambahkan permohonan perbaikan. "
-      "Fokus pada kerusakan yang terlihat dan hindari spekulasi.\n\n"
-      "Format output yang diinginkan:\n"
-      "Kategori: [satu kategori yang dipilih]\n"
-      "Deskripsi: [deskripsi singkat]"
-      }
-      ]
-      }
-      ]
+        "contents": [
+          {
+            "parts": [
+              {
+                "inlineData": {
+                  "mimeType": "image/jpeg",
+                  "data": base64Image,
+                }
+              },
+              {
+                "text":
+                "Berdasarkan foto ini, identifikasi satu kategori utama kerusakan fasilitas umum "
+                "dari daftar berikut: Jalan Rusak, Marka Pudar, Lampu Mati, Trotoar Rusak, "
+                "Rambu Rusak, Jembatan Rusak, Sampah Menumpuk, Saluran Tersumbat, Sungai Tercemar, "
+                "Sampah Sungai, Pohon Tumbang, Taman Rusak, Fasilitas Rusak, Pipa Bocor, "
+                "Vandalisme, Banjir, dan Lainnya. " "Pilih kategori yang paling dominan atau paling mendesak untuk dilaporkan. "
+                "Buat deskripsi singkat untuk laporan perbaikan, dan tambahkan permohonan perbaikan. "
+                "Fokus pada kerusakan yang terlihat dan hindari spekulasi.\n\n"
+                "Format output yang diinginkan:\n"
+                "Kategori: [satu kategori yang dipilih]\n"
+                "Deskripsi: [deskripsi singkat]"
+             }
+            ]
+          }
+        ]
       });
       final headers = {
         'Content-Type': 'application/json',
@@ -151,6 +151,41 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a picture'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cancel),
+                title: const Text('Cancel'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _getLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -170,7 +205,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
       try {
         final position = await Geolocator.getCurrentPosition(
-          // locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
+          locationSettings: LocationSettings(accuracy: LocationAccuracy.high),
         ).timeout(const Duration(seconds: 10));
         setState(() {
           _latitude = position.latitude;
@@ -230,66 +265,44 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  void _showImageSourceDialog() {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Wrap(
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take a Picture'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.cancel),
-                title: const Text('Cancel'),
-                onTap: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Add Post')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _image != null
-                ? Image.file(
-                  _image!,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+            GestureDetector(
+              onTap: _showImageSourceDialog,
+              child: Container(
+                height: 250,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child:
+                _image != null
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    _image!,
+                    height: 250,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 )
-                : GestureDetector(
-                  onTap: _showImageSourceDialog,
-                  child: Container(
-                    height: 200,
-                    color: Colors.grey[300],
-                    child: Center(child: Icon(Icons.add_a_photo, size: 50)),
+                    : const Center(
+                  child: Icon(
+                    Icons.add_a_photo,
+                    size: 50,
+                    color: Colors.grey,
                   ),
                 ),
-            SizedBox(height: 10),
+              ),
+            ),
+            SizedBox(height: 24),
             TextField(
               controller: _descriptionController,
               textCapitalization: TextCapitalization.sentences,
@@ -299,7 +312,14 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            ElevatedButton(onPressed: _submitPost, child: Text('Post')),
+            SizedBox(height: 24),
+            _isUploading
+                ? CircularProgressIndicator()
+                : ElevatedButton.icon(
+              onPressed: _submitPost,
+              icon: Icon(Icons.upload),
+              label: Text('Post'),
+            ),
           ],
         ),
       ),
